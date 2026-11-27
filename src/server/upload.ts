@@ -3,7 +3,6 @@
 import { randomUUID } from "node:crypto";
 import { DeleteObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { TenantRole } from "@prisma/client";
-import { fileTypeFromBuffer } from "file-type";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { getQueue } from "@/lib/queue";
@@ -13,10 +12,24 @@ import { requireRole, UnauthorizedError } from "@/lib/rbac";
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
 const uploadTypeSchema = z.enum(["new", "amendment"]);
 const tenantIdSchema = z.string().min(1).max(191);
-const supportedMimeTypes = new Set([
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-]);
+
+type DetectedType = { mime: string; ext: string } | null;
+
+function detectFileType(buffer: Buffer): DetectedType {
+  if (buffer.length < 4) return null;
+  // PDF: %PDF
+  if (buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46) {
+    return { mime: "application/pdf", ext: "pdf" };
+  }
+  // DOCX (ZIP): PK\x03\x04
+  if (buffer[0] === 0x50 && buffer[1] === 0x4b && buffer[2] === 0x03 && buffer[3] === 0x04) {
+    return {
+      mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ext: "docx",
+    };
+  }
+  return null;
+}
 
 export type UploadResult =
   | { invoiceId: string }
@@ -69,8 +82,8 @@ export async function uploadInvoice(formData: FormData): Promise<UploadResult> {
   }
 
   const buffer = Buffer.from(await fileValue.arrayBuffer());
-  const detected = await fileTypeFromBuffer(buffer);
-  if (!detected || !supportedMimeTypes.has(detected.mime)) {
+  const detected = detectFileType(buffer);
+  if (!detected) {
     return { error: "Nur echte PDF- und DOCX-Dateien werden unterstützt.", status: 415 };
   }
 
