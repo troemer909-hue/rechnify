@@ -39,12 +39,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async jwt({ token, user }) {
       if (user?.id) {
         const sessionId = randomUUID();
+        const membership = await db.tenantMembership.findFirst({
+          where: { userId: user.id },
+          orderBy: { invitedAt: "asc" },
+          select: { tenantId: true },
+        });
         token.userId = user.id;
         token.sessionId = sessionId;
+        token.activeTenantId = membership?.tenantId ?? null;
         await db.session.create({
           data: {
             id: sessionId,
             userId: user.id,
+            activeTenantId: membership?.tenantId ?? null,
             expiresAt: new Date(Date.now() + SESSION_MAX_AGE_SECONDS * 1000),
           },
         });
@@ -54,18 +61,30 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       const storedSession = await db.session.findUnique({
         where: { id: token.sessionId },
-        select: { userId: true, expiresAt: true },
+        select: { userId: true, activeTenantId: true, expiresAt: true },
       });
       if (!storedSession || storedSession.expiresAt <= new Date()) {
         token.sessionValid = false;
         return token;
       }
 
-      const membership = await db.tenantMembership.findFirst({
-        where: { userId: storedSession.userId },
-        orderBy: { invitedAt: "asc" },
-        select: { tenantId: true },
-      });
+      const membership = storedSession.activeTenantId
+        ? await db.tenantMembership.findUnique({
+            where: {
+              userId_tenantId: {
+                userId: storedSession.userId,
+                tenantId: storedSession.activeTenantId,
+              },
+            },
+            select: { tenantId: true },
+          })
+        : null;
+      if (storedSession.activeTenantId && !membership) {
+        await db.session.update({
+          where: { id: token.sessionId },
+          data: { activeTenantId: null },
+        });
+      }
       token.userId = storedSession.userId;
       token.activeTenantId = membership?.tenantId ?? null;
       token.sessionValid = true;
@@ -76,6 +95,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.sessionValid === false || typeof token.userId !== "string"
           ? ""
           : token.userId;
+      session.sessionId =
+        token.sessionValid === false || typeof token.sessionId !== "string"
+          ? ""
+          : token.sessionId;
       session.activeTenantId =
         typeof token.activeTenantId === "string" ? token.activeTenantId : null;
       if (session.user) {

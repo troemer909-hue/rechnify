@@ -7,6 +7,7 @@ declare module "next-auth" {
 
   interface Session extends DefaultSession {
     userId: string;
+    sessionId: string;
     activeTenantId: string | null;
     user: NonNullable<DefaultSession["user"]> & { id: string };
   }
