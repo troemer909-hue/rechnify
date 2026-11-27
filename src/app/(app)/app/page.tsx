@@ -1,9 +1,21 @@
 import { signOut } from "@/lib/auth";
 import { getSession } from "@/lib/session";
+import { db } from "@/lib/db";
+import { redirect } from "next/navigation";
 
 export default async function DashboardPage() {
   const session = await getSession();
   if (!session) return null;
+  if (!session.activeTenantId) redirect("/app/settings/tenant");
+
+  const tenant = await db.tenant.findFirst({
+    where: {
+      id: session.activeTenantId,
+      memberships: { some: { userId: session.userId } },
+    },
+    select: { name: true },
+  });
+  if (!tenant) redirect("/app/settings/tenant");
 
   return (
     <main className="mx-auto min-h-screen max-w-4xl px-6 py-12">
@@ -28,11 +40,7 @@ export default async function DashboardPage() {
       </header>
       <section className="mt-10 rounded-xl border bg-card p-6">
         <h2 className="font-medium">Arbeitsbereich</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {session.activeTenantId
-            ? `Aktiver Mandant: ${session.activeTenantId}`
-            : "Dein Konto ist bereit. Ein Mandant kann später eingerichtet werden."}
-        </p>
+        <p className="mt-2 text-sm text-muted-foreground">Aktiver Mandant: {tenant.name}</p>
       </section>
     </main>
   );
