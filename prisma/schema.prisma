@@ -6,3 +6,122 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+model User {
+  id           String             @id @default(cuid())
+  email        String             @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime           @default(now())
+  memberships  TenantMembership[]
+  sessions     Session[]
+}
+
+model Tenant {
+  id               String             @id @default(cuid())
+  name             String
+  legalName        String
+  street           String
+  zip              String
+  city             String
+  country          String             @default("DE")
+  taxId            String?
+  vatId            String?
+  retentionDays    Int                @default(30)
+  stripeCustomerId String?
+  createdAt        DateTime           @default(now())
+  memberships      TenantMembership[]
+  invoices         Invoice[]
+  subscription     Subscription?
+}
+
+enum TenantRole {
+  OWNER
+  ADMIN
+  EDITOR
+  REVIEWER
+}
+
+model TenantMembership {
+  id        String     @id @default(cuid())
+  user      User       @relation(fields: [userId], references: [id])
+  userId    String
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  tenantId  String
+  role      TenantRole
+  invitedAt DateTime   @default(now())
+
+  @@unique([userId, tenantId])
+  @@index([tenantId])
+}
+
+enum InvoiceStatus {
+  UPLOADED
+  EXTRACTING
+  REVIEW
+  CONFIRMED
+  GENERATING
+  DONE
+  FAILED
+}
+
+model Invoice {
+  id                 String        @id @default(cuid())
+  tenant             Tenant        @relation(fields: [tenantId], references: [id])
+  tenantId           String
+  status             InvoiceStatus @default(UPLOADED)
+  originalFileKey    String
+  originalFileType   String        // "pdf" | "docx"
+  extractedData      Json?
+  confirmedData      Json?
+  zugferdFileKey     String?
+  reportFileKey      String?
+  isAmendment        Boolean       @default(false)
+  originalInvoiceRef Json?         // { number: string, date: string }
+  validationResult   Json?
+  createdAt          DateTime      @default(now())
+  confirmedAt        DateTime?
+  confirmedBy        String?
+  deletedAt          DateTime?
+  paidAt             DateTime?
+  payments           Payment[]
+
+  @@index([tenantId])
+  @@index([tenantId, status, createdAt])
+}
+
+model Payment {
+  id              String   @id @default(cuid())
+  invoice          Invoice? @relation(fields: [invoiceId], references: [id])
+  invoiceId        String?
+  tenantId         String
+  stripeSessionId  String   @unique
+  amount           Int
+  currency         String   @default("eur")
+  paidAt           DateTime?
+  createdAt        DateTime @default(now())
+
+  @@index([invoiceId])
+  @@index([tenantId])
+}
+
+model Subscription {
+  id                   String   @id @default(cuid())
+  tenantId             String   @unique
+  tenant               Tenant   @relation(fields: [tenantId], references: [id])
+  stripeSubscriptionId String   @unique
+  status               String
+  currentPeriodEnd     DateTime
+  createdAt            DateTime @default(now())
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
