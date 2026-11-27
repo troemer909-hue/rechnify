@@ -42,5 +42,9 @@ function validateEnv(): Env {
   return result.data;
 }
 
-// Validate once at import time (server-side only)
-export const env = validateEnv();
+// Validate once at import time (server-side only).
+// Set SKIP_ENV_VALIDATION=1 to bypass during CI builds without real secrets.
+export const env =
+  process.env.SKIP_ENV_VALIDATION === "1"
+    ? (process.env as unknown as Env)
+    : validateEnv();
