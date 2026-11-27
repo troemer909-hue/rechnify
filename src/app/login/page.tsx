@@ -26,7 +26,12 @@ export default function LoginPage() {
         setError("E-Mail-Adresse oder Passwort ist nicht korrekt.");
         return;
       }
-      router.replace("/app");
+      const requestedDestination = new URLSearchParams(window.location.search).get("callbackUrl");
+      const destination =
+        requestedDestination?.startsWith("/") && !requestedDestination.startsWith("//")
+          ? requestedDestination
+          : "/app";
+      router.replace(destination);
       router.refresh();
     } catch {
       setError("Die Anmeldung ist gerade nicht möglich. Bitte versuche es erneut.");

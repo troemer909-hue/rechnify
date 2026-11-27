@@ -27,6 +27,7 @@ export default async function ProtectedLayout({
         <nav className="mt-8 grid gap-2 text-sm">
           <Link href="/app" className="rounded-md px-3 py-2 hover:bg-muted">Übersicht</Link>
           <Link href="/app/settings/tenant" className="rounded-md px-3 py-2 hover:bg-muted">Mandant & Stammdaten</Link>
+          <Link href="/app/settings/members" className="rounded-md px-3 py-2 hover:bg-muted">Mitglieder</Link>
         </nav>
       </aside>
       <div>{children}</div>
