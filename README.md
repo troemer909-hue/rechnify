@@ -27,3 +27,14 @@ Rechnify (Arbeitstitel: Rechnungsbrücke) ist ein Web-Tool, das eigene PDF-Rechn
 ## Status
 
 Konzeptphase – MVP in Entwicklung.
+
+## Betrieb mit ZUGFeRD-Validierung
+
+Das mitgelieferte Dockerfile installiert Java 21, LibreOffice Writer und Mustang CLI 2.26.0. Damit werden DOCX-Quelldateien in PDF umgewandelt, CII eingebettet und XML sowie PDF/A-3 im selben Worker validiert.
+
+```sh
+docker build -t rechnify .
+docker run --env-file .env -p 3000:3000 rechnify
+```
+
+Für einen Betrieb außerhalb von Docker müssen Java 21, LibreOffice Writer und Mustang CLI 2.26.0 installiert sein. Setze `JAVA_BINARY`, `LIBREOFFICE_BINARY` und `MUSTANG_CLI_JAR` auf die entsprechenden ausführbaren Dateien und das Mustang-JAR.

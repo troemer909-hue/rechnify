@@ -12,6 +12,10 @@ import { requireRole, UnauthorizedError } from "@/lib/rbac";
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
 const uploadTypeSchema = z.enum(["new", "amendment"]);
+const originalInvoiceRefSchema = z.object({
+  number: z.string().trim().min(1).max(120),
+  date: z.string().date(),
+});
 const tenantIdSchema = z.string().min(1).max(191);
 const supportedMimeTypes = new Set([
   "application/pdf",
@@ -48,6 +52,15 @@ export async function uploadInvoice(formData: FormData): Promise<UploadResult> {
   const uploadTypeResult = uploadTypeSchema.safeParse(formData.get("type"));
   if (!tenantIdResult.success || !uploadTypeResult.success) {
     return { error: "Die Upload-Angaben sind ungültig.", status: 400 };
+  }
+  const originalInvoiceRefResult = uploadTypeResult.data === "amendment"
+    ? originalInvoiceRefSchema.safeParse({
+        number: formData.get("originalInvoiceNumber"),
+        date: formData.get("originalInvoiceDate"),
+      })
+    : null;
+  if (originalInvoiceRefResult && !originalInvoiceRefResult.success) {
+    return { error: "Bitte gib eine gültige Rechnungsnummer und ein Rechnungsdatum des Originals an.", status: 400 };
   }
 
   let context;
@@ -99,6 +112,7 @@ export async function uploadInvoice(formData: FormData): Promise<UploadResult> {
         originalFileKey: key,
         originalFileType: detected.ext,
         isAmendment: uploadTypeResult.data === "amendment",
+        originalInvoiceRef: originalInvoiceRefResult?.success ? originalInvoiceRefResult.data : undefined,
       },
     });
 

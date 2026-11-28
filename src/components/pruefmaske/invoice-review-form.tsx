@@ -3,6 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AlertTriangle, Check, CircleAlert, Info, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import type { InvoiceData, SenderMatch } from "@/lib/types/invoice";
 import { invoiceFormSchema, type InvoiceFormValues } from "@/lib/invoice-form-schema";
@@ -117,40 +118,54 @@ export function InvoiceReviewForm({
   initialData,
   senderMatch,
   ocrConfidence,
+  tenantLegalName,
+  originalInvoiceRef,
 }: {
   invoiceId: string;
   initialData: InvoiceData;
   senderMatch: SenderMatch | null;
   ocrConfidence: number | null;
+  tenantLegalName: string;
+  originalInvoiceRef: { number: string; date: string } | null;
 }) {
+  const router = useRouter();
   const [hydrated, setHydrated] = useState(false);
   const [mismatchDismissed, setMismatchDismissed] = useState(false);
   const [flagConfirmations, setFlagConfirmations] = useState<Record<string, boolean>>({});
   const [hiddenFlagBanners, setHiddenFlagBanners] = useState<Record<string, boolean>>({});
-  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [confirmationOpen, setConfirmationOpen] = useState(false);
+  const [issuerConfirmed, setIssuerConfirmed] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState("");
   const form = useForm<InvoiceFormValues>({
     resolver: zodResolver(invoiceFormSchema),
     defaultValues: initialData,
     mode: "onChange",
   });
-  const { register, control, handleSubmit, reset, setValue, formState: { isSubmitting, isValid } } = form;
+  const { register, control, handleSubmit, reset, trigger, setValue, getValues, formState: { isSubmitting, isValid } } = form;
   const lineItems = useFieldArray({ control, name: "lineItems" });
   const taxLines = useFieldArray({ control, name: "taxLines" });
   const values = useWatch({ control }) as InvoiceFormValues;
   const confidence = values?.confidence ?? {};
 
   useEffect(() => {
-    try {
-      const draft = localStorage.getItem(`invoice-review:${invoiceId}`);
-      if (draft) {
-        const parsed = invoiceFormSchema.safeParse(JSON.parse(draft));
-        if (parsed.success) reset(parsed.data);
+    let active = true;
+    async function hydrateDraft() {
+      try {
+        const draft = localStorage.getItem(`invoice-review:${invoiceId}`);
+        if (draft) {
+          const parsed = invoiceFormSchema.safeParse(JSON.parse(draft));
+          if (parsed.success) reset(parsed.data);
+        }
+      } catch {
+        localStorage.removeItem(`invoice-review:${invoiceId}`);
       }
-    } catch {
-      localStorage.removeItem(`invoice-review:${invoiceId}`);
+      await trigger();
+      if (active) setHydrated(true);
     }
-    setHydrated(true);
-  }, [invoiceId, reset]);
+    void hydrateDraft();
+    return () => { active = false; };
+  }, [invoiceId, reset, trigger]);
 
   useEffect(() => {
     if (!hydrated || !values) return;
@@ -167,23 +182,45 @@ export function InvoiceReviewForm({
   const sumCheck = useMemo(() => checkSums(values), [values]);
   const canSubmit = hydrated && isValid && missingRequired.length === 0 && !mismatchBlocked && unconfirmedFlags.length === 0 && sumCheck.valid;
 
-  async function saveInvoice(data: InvoiceFormValues) {
-    setSaveState("saving");
+  async function confirmInvoice() {
+    if (!issuerConfirmed || confirming || !canSubmit) return;
+    setConfirmError("");
+    setConfirming(true);
     try {
-      const response = await fetch(`/api/invoices/${encodeURIComponent(invoiceId)}`, {
-        method: "PATCH",
+      const response = await fetch(`/api/invoices/${encodeURIComponent(invoiceId)}/confirm`, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fields: data }),
+        body: JSON.stringify({
+          fields: getValues(),
+          issuerConfirmed,
+          acknowledgedFlags: activeFlags.filter((flag) => flagConfirmations[flag]),
+          senderMismatchAcknowledged: !mismatchBlocked,
+        }),
       });
-      if (!response.ok) throw new Error("Speichern fehlgeschlagen");
-      setSaveState("saved");
-    } catch {
-      setSaveState("error");
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "Die Rechnung konnte nicht bestätigt werden.");
+      localStorage.removeItem(`invoice-review:${invoiceId}`);
+      router.push(`/app/invoices/${encodeURIComponent(invoiceId)}/result`);
+    } catch (error) {
+      setConfirmError(error instanceof Error ? error.message : "Die Rechnung konnte nicht bestätigt werden.");
+    } finally {
+      setConfirming(false);
     }
   }
 
+  function openConfirmation() {
+    setIssuerConfirmed(false);
+    setConfirmError("");
+    setConfirmationOpen(true);
+  }
+
   return (
-    <form onSubmit={handleSubmit(saveInvoice)} className="space-y-6 pb-10">
+    <form onSubmit={handleSubmit(openConfirmation)} className="space-y-6 pb-10">
+      {originalInvoiceRef && (
+        <div className="rounded-lg border border-blue-300 bg-blue-50 p-4 text-sm text-blue-950">
+          Diese Rechnung wird als Berichtigung zu {originalInvoiceRef.number} vom {originalInvoiceRef.date} erstellt. Die neue E-Rechnung verweist technisch auf das Originaldokument. Ob eine Berichtigung steuerrechtlich erforderlich oder zulässig ist, liegt in Ihrer Verantwortung.
+        </div>
+      )}
       {senderMatch?.overall === "mismatch" && !mismatchDismissed && (
         <div role="alert" className="flex gap-3 rounded-lg border border-red-300 bg-red-50 p-4 text-red-950">
           <AlertTriangle className="mt-0.5 shrink-0" size={20} aria-hidden="true" />
@@ -345,17 +382,35 @@ export function InvoiceReviewForm({
 
       <div className="sticky bottom-0 z-10 flex flex-col gap-3 rounded-xl border bg-background/95 p-4 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between">
         <div className="text-sm" aria-live="polite">
-          {saveState === "saved" && <span className="inline-flex items-center gap-1 text-green-700"><Check size={16} /> Änderungen gespeichert.</span>}
-          {saveState === "error" && <span className="text-red-700">Speichern fehlgeschlagen. Bitte versuchen Sie es erneut.</span>}
           {(!canSubmit && !mismatchBlocked) && missingRequired.length > 0 && <span className="text-red-700">Bitte füllen Sie alle Pflichtfelder aus.</span>}
           {unconfirmedFlags.length > 0 && <span className="ml-2 text-amber-800">Bitte bestätigen Sie alle Rechnungshinweise.</span>}
           {mismatchBlocked && <span className="text-red-700">Bitte bestätigen Sie zuerst, dass Sie den Absenderhinweis gelesen haben.</span>}
           {!sumCheck.valid && <span className="text-red-700"> Bitte korrigieren Sie die Summenabweichung.</span>}
         </div>
-        <button type="submit" title={!sumCheck.valid ? "Bitte korrigieren Sie die Summenabweichung." : undefined} disabled={!canSubmit || isSubmitting || saveState === "saving"} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50">
-          {isSubmitting || saveState === "saving" ? "Speichern…" : "Prüfung speichern"}
+        <button type="submit" title={!sumCheck.valid ? "Bitte korrigieren Sie die Summenabweichung." : undefined} disabled={!canSubmit || isSubmitting || confirming} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50">
+          {isSubmitting || confirming ? "Bitte warten…" : "Rechnung bestätigen"}
         </button>
       </div>
+
+      {confirmationOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="presentation">
+          <section role="dialog" aria-modal="true" aria-labelledby="confirm-invoice-title" className="w-full max-w-lg rounded-xl border bg-background p-6 shadow-xl">
+            <h2 id="confirm-invoice-title" className="text-xl font-semibold">Rechnung bestätigen</h2>
+            <p className="mt-3 text-sm leading-6">
+              Ich bestätige, dass diese Rechnung von <strong>{tenantLegalName}</strong> ausgestellt wurde und die angezeigten Angaben korrekt sind.
+            </p>
+            <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-lg border p-4 text-sm">
+              <input type="checkbox" checked={issuerConfirmed} onChange={(event) => setIssuerConfirmed(event.target.checked)} className="mt-1" />
+              <span>Ich bestätige die Ausstellung durch den Mandanten und die Richtigkeit der angezeigten Angaben.</span>
+            </label>
+            {confirmError && <p role="alert" className="mt-3 text-sm text-destructive">{confirmError}</p>}
+            <div className="mt-6 flex justify-end gap-3">
+              <button type="button" disabled={confirming} onClick={() => setConfirmationOpen(false)} className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-muted disabled:opacity-60">Abbrechen</button>
+              <button type="button" disabled={!issuerConfirmed || confirming} onClick={() => void confirmInvoice()} className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50">{confirming ? "Wird erstellt…" : "Jetzt erstellen"}</button>
+            </div>
+          </section>
+        </div>
+      )}
     </form>
   );
 }
