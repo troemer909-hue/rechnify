@@ -1,6 +1,7 @@
 import { fromBuffer } from "pdf2pic";
 import { createWorker } from "tesseract.js";
 import { z } from "zod";
+import type PgBoss from "pg-boss";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { getQueue } from "@/lib/queue";
@@ -94,4 +95,10 @@ export async function extractOcr(data: unknown): Promise<void> {
   if (!nextJobId) {
     throw new Error(`Could not enqueue field extraction for invoice ${invoiceId}`);
   }
+}
+
+export async function registerOcrExtractionWorker(boss: PgBoss): Promise<void> {
+  await boss.work("extract-ocr", { batchSize: 1 }, async (jobs) => {
+    for (const job of jobs) await extractOcr(job.data);
+  });
 }

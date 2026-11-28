@@ -1,7 +1,15 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  serverExternalPackages: [
+    "@anthropic-ai/sdk",
+    "htmlparser2",
+    "mammoth",
+    "pdf-parse",
+    "pdf2pic",
+    "pg-boss",
+    "tesseract.js",
+  ],
 };
 
 export default nextConfig;

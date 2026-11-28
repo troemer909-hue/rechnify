@@ -1,14 +1,25 @@
 import PgBoss from "pg-boss";
+import { registerDocxExtractionWorker } from "@/server/jobs/extract-docx";
+import { registerOcrExtractionWorker } from "@/server/jobs/extract-ocr";
+import { registerPdfTextExtractionWorker } from "@/server/jobs/extract-pdf-text";
+import { registerFieldExtractionWorker } from "@/server/jobs/extract-fields";
 
-let bossInstance: PgBoss | null = null;
+let bossPromise: Promise<PgBoss> | null = null;
 
 export async function getQueue(): Promise<PgBoss> {
-  if (!bossInstance) {
-    bossInstance = new PgBoss({
-      connectionString: process.env.DATABASE_URL,
-      max: 5,
-    });
-    await bossInstance.start();
+  if (!bossPromise) {
+    bossPromise = (async () => {
+      const boss = new PgBoss({
+        connectionString: process.env.DATABASE_URL,
+        max: 5,
+      });
+      await boss.start();
+      await registerPdfTextExtractionWorker(boss);
+      await registerOcrExtractionWorker(boss);
+      await registerDocxExtractionWorker(boss);
+      await registerFieldExtractionWorker(boss);
+      return boss;
+    })();
   }
-  return bossInstance;
+  return bossPromise;
 }
