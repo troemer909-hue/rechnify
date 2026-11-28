@@ -77,7 +77,11 @@ async function processDocx(job: ExtractDocxJob): Promise<void> {
       return;
     }
 
-    const extractedData = { rawText, tables: extractTables(htmlResult.value) };
+    const extractedData = {
+      rawText,
+      tables: extractTables(htmlResult.value),
+      previewHtml: htmlResult.value,
+    };
     const saved = await db.invoice.updateMany({
       where: { id: invoiceId, tenantId },
       data: { extractedData },
