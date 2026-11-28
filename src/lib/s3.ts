@@ -1,4 +1,4 @@
-import { S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
 const globalForS3 = globalThis as unknown as { s3?: S3Client };
 
@@ -18,3 +18,14 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 export const S3_BUCKET = process.env.S3_BUCKET ?? "";
+
+export async function downloadBuffer(key: string): Promise<Buffer> {
+  if (!S3_BUCKET) throw new Error("S3_BUCKET is not configured");
+
+  const response = await s3.send(
+    new GetObjectCommand({ Bucket: S3_BUCKET, Key: key }),
+  );
+  if (!response.Body) throw new Error(`S3 object ${key} has no body`);
+
+  return Buffer.from(await response.Body.transformToByteArray());
+}

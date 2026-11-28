@@ -27,3 +27,20 @@ Rechnify (Arbeitstitel: Rechnungsbrücke) ist ein Web-Tool, das eigene PDF-Rechn
 ## Status
 
 Konzeptphase – MVP in Entwicklung.
+
+## Verarbeitung starten
+
+Die Hintergrundjobs laufen in einem separaten Prozess. Neben dem Webserver muss
+ein Worker mit denselben Datenbank- und S3-Umgebungsvariablen laufen:
+
+```sh
+pnpm worker
+```
+
+Das Docker-Image enthält Ghostscript, ImageMagick und die deutsche Tesseract-
+Sprachdatei für die OCR-Verarbeitung. Zum Starten des Workers kann beim
+Containerstart der Standardbefehl überschrieben werden:
+
+```sh
+docker run --env-file .env rechnify worker
+```
