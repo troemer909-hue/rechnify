@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
     "pdf-parse",
     "pdf2pic",
     "pg-boss",
+    "sanitize-html",
     "tesseract.js",
   ],
 };
