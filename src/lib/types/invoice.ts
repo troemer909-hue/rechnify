@@ -21,3 +21,9 @@ export type InvoiceData = {
   confidence: Partial<Record<string, number>>; // 0–1 per field path
   flags: Array<"GUTSCHRIFT" | "REVERSE_CHARGE" | "INNERGEMEINSCHAFTLICH" | "DREIECK">;
 };
+
+export type SenderMatch = {
+  nameScore: number;
+  vatIdMatch: boolean | null;
+  overall: "ok" | "warning" | "mismatch";
+};
