@@ -14,6 +14,8 @@ export function InvoiceUploadForm({ tenantId }: { tenantId: string }) {
   const stopped = useRef(false);
   const [file, setFile] = useState<File | null>(null);
   const [type, setType] = useState<"new" | "amendment">("new");
+  const [originalInvoiceNumber, setOriginalInvoiceNumber] = useState("");
+  const [originalInvoiceDate, setOriginalInvoiceDate] = useState("");
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -98,6 +100,10 @@ export function InvoiceUploadForm({ tenantId }: { tenantId: string }) {
       setError("Die Datei darf höchstens 25 MB groß sein.");
       return;
     }
+    if (type === "amendment" && (!originalInvoiceNumber.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(originalInvoiceDate))) {
+      setError("Bitte gib Rechnungsnummer und Rechnungsdatum des Originals an.");
+      return;
+    }
 
     setError("");
     setProgress(0);
@@ -106,6 +112,10 @@ export function InvoiceUploadForm({ tenantId }: { tenantId: string }) {
     formData.set("file", file);
     formData.set("tenantId", tenantId);
     formData.set("type", type);
+    if (type === "amendment") {
+      formData.set("originalInvoiceNumber", originalInvoiceNumber.trim());
+      formData.set("originalInvoiceDate", originalInvoiceDate);
+    }
 
     const result = await new Promise<{ response: UploadResponse; status: number }>((resolve) => {
       const request = new XMLHttpRequest();
@@ -172,7 +182,14 @@ export function InvoiceUploadForm({ tenantId }: { tenantId: string }) {
         <input
           type="checkbox"
           checked={type === "amendment"}
-          onChange={(event) => setType(event.target.checked ? "amendment" : "new")}
+          onChange={(event) => {
+            const nextType = event.target.checked ? "amendment" : "new";
+            setType(nextType);
+            if (nextType === "new") {
+              setOriginalInvoiceNumber("");
+              setOriginalInvoiceDate("");
+            }
+          }}
           disabled={uploading || processing}
           className="mt-1"
         />
@@ -183,6 +200,34 @@ export function InvoiceUploadForm({ tenantId }: { tenantId: string }) {
           </span>
         </span>
       </label>
+
+      {type === "amendment" && (
+        <div className="grid gap-4 rounded-lg border border-blue-200 bg-blue-50/50 p-4 sm:grid-cols-2">
+          <label className="grid gap-1.5 text-sm font-medium">
+            Rechnungsnummer des Originals
+            <input
+              type="text"
+              value={originalInvoiceNumber}
+              onChange={(event) => setOriginalInvoiceNumber(event.target.value)}
+              maxLength={120}
+              required
+              disabled={uploading || processing}
+              className="rounded-md border bg-background px-3 py-2 font-normal"
+            />
+          </label>
+          <label className="grid gap-1.5 text-sm font-medium">
+            Rechnungsdatum des Originals
+            <input
+              type="date"
+              value={originalInvoiceDate}
+              onChange={(event) => setOriginalInvoiceDate(event.target.value)}
+              required
+              disabled={uploading || processing}
+              className="rounded-md border bg-background px-3 py-2 font-normal"
+            />
+          </label>
+        </div>
+      )}
 
       {uploading && (
         <div className="space-y-2" aria-live="polite">
@@ -208,7 +253,7 @@ export function InvoiceUploadForm({ tenantId }: { tenantId: string }) {
       <button
         type="button"
         onClick={() => void submit()}
-        disabled={!file || uploading || processing}
+        disabled={!file || uploading || processing || (type === "amendment" && (!originalInvoiceNumber.trim() || !originalInvoiceDate))}
         className="w-full rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground disabled:opacity-60 sm:w-auto"
       >
         {uploading ? "Upload läuft …" : processing ? "Verarbeitung läuft …" : "Rechnung hochladen"}

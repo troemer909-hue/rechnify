@@ -33,7 +33,15 @@ export default async function InvoiceReviewPage({
       status: "REVIEW",
       tenant: { memberships: { some: { userId: session.userId } } },
     },
-    select: { id: true, originalFileKey: true, originalFileType: true, extractedData: true },
+    select: {
+      id: true,
+      originalFileKey: true,
+      originalFileType: true,
+      extractedData: true,
+      isAmendment: true,
+      originalInvoiceRef: true,
+      tenant: { select: { legalName: true } },
+    },
   });
   if (!invoice) notFound();
 
@@ -47,6 +55,11 @@ export default async function InvoiceReviewPage({
       ? matchValue as unknown as SenderMatch
       : null;
   const ocrConfidence = typeof extracted.ocrConfidence === "number" ? extracted.ocrConfidence : null;
+  const originalRefValue = asObject(invoice.originalInvoiceRef);
+  const originalInvoiceRef = invoice.isAmendment &&
+    typeof originalRefValue.number === "string" && typeof originalRefValue.date === "string"
+    ? { number: originalRefValue.number, date: originalRefValue.date }
+    : null;
   const isPdf = invoice.originalFileType.toLowerCase() === "pdf";
   const signedUrl = isPdf
     ? await getSignedUrl(
@@ -104,6 +117,8 @@ export default async function InvoiceReviewPage({
             initialData={fields}
             senderMatch={senderMatch}
             ocrConfidence={ocrConfidence}
+            tenantLegalName={invoice.tenant.legalName}
+            originalInvoiceRef={originalInvoiceRef}
           />
         </section>
       </div>

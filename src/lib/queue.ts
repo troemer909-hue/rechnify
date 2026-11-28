@@ -3,6 +3,7 @@ import { registerDocxExtractionWorker } from "@/server/jobs/extract-docx";
 import { registerOcrExtractionWorker } from "@/server/jobs/extract-ocr";
 import { registerPdfTextExtractionWorker } from "@/server/jobs/extract-pdf-text";
 import { registerFieldExtractionWorker } from "@/server/jobs/extract-fields";
+import { registerZugferdGenerationWorker } from "@/server/jobs/generate-zugferd";
 
 let bossPromise: Promise<PgBoss> | null = null;
 
@@ -18,6 +19,7 @@ export async function getQueue(): Promise<PgBoss> {
       await registerOcrExtractionWorker(boss);
       await registerDocxExtractionWorker(boss);
       await registerFieldExtractionWorker(boss);
+      await registerZugferdGenerationWorker(boss);
       return boss;
     })();
   }
