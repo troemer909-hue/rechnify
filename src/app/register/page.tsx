@@ -38,10 +38,17 @@ export default function RegisterPage() {
         redirect: false,
       });
       if (!login || login.error) {
-        router.replace("/login?registered=1");
+        const callbackUrl = new URLSearchParams(window.location.search).get("callbackUrl");
+        const query = callbackUrl ? `?callbackUrl=${encodeURIComponent(callbackUrl)}` : "";
+        router.replace(`/login${query}`);
         return;
       }
-      router.replace("/app");
+      const requestedDestination = new URLSearchParams(window.location.search).get("callbackUrl");
+      const destination =
+        requestedDestination?.startsWith("/") && !requestedDestination.startsWith("//")
+          ? requestedDestination
+          : "/app";
+      router.replace(destination);
       router.refresh();
     } catch {
       setError("Die Registrierung ist gerade nicht möglich. Bitte versuche es erneut.");

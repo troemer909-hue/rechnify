@@ -2,7 +2,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import type PgBoss from "pg-boss";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import type { InvoiceData } from "@/lib/types/invoice";
+import { nameSimilarity } from "@/lib/fuzzy";
+import type { InvoiceData, SenderMatch } from "@/lib/types/invoice";
 
 type ExtractFieldsJob = { invoiceId: string; tenantId: string };
 
@@ -66,6 +67,32 @@ function asObject(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function normalizeVatId(value: string): string {
+  return value.replace(/[^a-z0-9]/gi, "").toUpperCase();
+}
+
+function compareSender(
+  sender: InvoiceData["sender"],
+  tenant: { name: string; legalName: string; vatId: string | null },
+): SenderMatch {
+  const nameScore = Math.max(
+    nameSimilarity(sender.name, tenant.name),
+    nameSimilarity(sender.name, tenant.legalName),
+  );
+  const senderVatId = sender.vatId?.trim();
+  const tenantVatId = tenant.vatId?.trim();
+  const vatIdMatch = senderVatId && tenantVatId
+    ? normalizeVatId(senderVatId) === normalizeVatId(tenantVatId)
+    : null;
+
+  let overall: SenderMatch["overall"];
+  if (nameScore < 0.5) overall = "mismatch";
+  else if (nameScore < 0.8 || vatIdMatch !== true) overall = "warning";
+  else overall = "ok";
+
+  return { nameScore, vatIdMatch, overall };
+}
+
 async function failInvoice(job: ExtractFieldsJob, message: string) {
   const invoice = await db.invoice.findFirst({
     where: { id: job.invoiceId, tenantId: job.tenantId },
@@ -90,7 +117,10 @@ async function processJob(job: ExtractFieldsJob) {
   try {
     const invoice = await db.invoice.findFirst({
       where: { id: job.invoiceId, tenantId: job.tenantId },
-      select: { extractedData: true },
+      select: {
+        extractedData: true,
+        tenant: { select: { name: true, legalName: true, vatId: true } },
+      },
     });
     if (!invoice) throw new Error("Invoice not found for field extraction");
     const existingData = asObject(invoice.extractedData);
@@ -124,6 +154,7 @@ async function processJob(job: ExtractFieldsJob) {
     const missing = requiredValues.filter(([, value]) => !value.trim()).map(([name]) => name);
     if (fields.grossTotal === null || !Number.isFinite(fields.grossTotal)) missing.push("grossTotal");
     if (missing.length) throw new Error(`Required invoice fields are missing: ${missing.join(", ")}`);
+    const senderMatch = compareSender(fields.sender, invoice.tenant);
 
     await db.invoice.updateMany({
       where: { id: job.invoiceId, tenantId: job.tenantId },
@@ -132,6 +163,7 @@ async function processJob(job: ExtractFieldsJob) {
         extractedData: {
           ...existingData,
           fields,
+          senderMatch,
           usage: {
             inputTokens: response.usage.input_tokens,
             outputTokens: response.usage.output_tokens,
