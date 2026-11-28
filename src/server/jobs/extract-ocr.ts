@@ -3,6 +3,7 @@ import { createWorker } from "tesseract.js";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { getQueue } from "@/lib/queue";
 import { downloadBuffer } from "@/lib/s3";
 
 const jobDataSchema = z.object({
